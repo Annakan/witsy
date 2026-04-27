@@ -1,5 +1,5 @@
 
-import { vi, beforeAll, beforeEach, expect, test } from 'vitest'
+import { vi, beforeAll, beforeEach, afterEach, expect, test } from 'vitest'
 import { useWindowMock } from '@tests/mocks/window'
 import { store } from '@services/store'
 import LlmFactory, { ILlmManager } from '@services/llms/llm'
@@ -70,6 +70,12 @@ beforeEach(() => {
   store.config.engines.xai.apiKey =
   store.config.engines.deepseek.apiKey = '123'
   store.config.engines.openrouter.apiKey = '123'
+  // OpenRouter fetches a separate embeddings catalog via fetch(); stub it.
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: [] }), { status: 200 })))
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 test('Init models', async () => {

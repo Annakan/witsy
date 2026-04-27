@@ -13,40 +13,78 @@ export default class LlmManager extends LlmManagerBase {
     super(config)
   }
 
-  // OpenRouter's `loadOpenRouterModels` drops embedding models (modality `text->embedding`)
-  // and hardcodes `embedding: []`. We call getModels() ourselves and classify into all
-  // three buckets, reusing `getModelCapabilities()` so chat capability icons are identical.
+  // OpenRouter exposes embedding models on a SEPARATE catalog endpoint
+  // (`/models?output_modalities=embeddings`). The standard `/models` endpoint never
+  // includes them. multi-llm-ts's `OpenRouter.getModels()` only hits the standard one,
+  // which is why our `embedding` bucket was always empty.
+  // We do two fetches in parallel and merge.
   private async loadOpenRouterModelsAll(engineConfig: EngineConfig): Promise<llm.ModelsList|null> {
     const provider = new llm.OpenRouter(engineConfig)
-    let metas: Array<Record<string, unknown>> = []
+    const baseURL = (engineConfig.baseURL || (llm.PROVIDER_BASE_URLS as Record<string, string>).openrouter || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')
+
+    const fetchEmbeddingMetas = async (): Promise<Array<Record<string, unknown>>> => {
+      try {
+        const headers: Record<string, string> = {}
+        if (engineConfig.apiKey) headers['Authorization'] = `Bearer ${engineConfig.apiKey}`
+        const resp = await fetch(`${baseURL}/models?output_modalities=embeddings`, { headers })
+        if (!resp.ok) {
+          console.warn(`[openrouter] embeddings catalog fetch failed: ${resp.status}`)
+          return []
+        }
+        const json = await resp.json()
+        return (json?.data ?? []) as Array<Record<string, unknown>>
+      } catch (error) {
+        console.warn('[openrouter] embeddings catalog fetch error:', error)
+        return []
+      }
+    }
+
+    let chatMetas: Array<Record<string, unknown>> = []
+    let embeddingMetas: Array<Record<string, unknown>> = []
     try {
-      metas = (await provider.getModels() || []) as Array<Record<string, unknown>>
+      [chatMetas, embeddingMetas] = await Promise.all([
+        provider.getModels().then(m => (m || []) as Array<Record<string, unknown>>),
+        fetchEmbeddingMetas(),
+      ])
     } catch (error) {
       console.error('Error listing OpenRouter models:', error)
       return null
     }
-    if (!metas.length) return null
 
-    const models: llm.Model[] = metas.map(m => ({
+    if (!chatMetas.length && !embeddingMetas.length) return null
+
+    const toModel = (m: Record<string, unknown>): llm.Model => ({
       id: m.id as string,
       name: (m.name as string) || (m.id as string),
       capabilities: provider.getModelCapabilities(m),
       meta: m,
-    }))
+    })
 
     const lastModality = (m: llm.Model): string => {
       const modality = ((m.meta as Record<string, unknown>)?.architecture as { modality?: string } | undefined)?.modality || ''
       return (modality.split('>').pop() || '').toLowerCase()
     }
-    const isEmbedding = (m: llm.Model): boolean =>
-      lastModality(m).includes('embedding') || /embed/i.test(m.id)
+    const isEmbeddingMeta = (m: llm.Model): boolean =>
+      lastModality(m).includes('embed') || /embed/i.test(m.id)
+
+    const chatModels = chatMetas.map(toModel)
+    const embeddingModels = embeddingMetas.map(toModel)
+
+    // safety: ensure the standard catalog's embedding accidentals are also captured
+    const accidentalEmbeddings = chatModels.filter(isEmbeddingMeta)
+    const knownIds = new Set(embeddingModels.map(m => m.id))
+    for (const m of accidentalEmbeddings) {
+      if (!knownIds.has(m.id)) embeddingModels.push(m)
+    }
 
     const byName = (a: llm.Model, b: llm.Model) => a.name.localeCompare(b.name)
 
+    console.log(`[openrouter] loaded ${chatModels.length} chat metas, ${embeddingModels.length} embedding metas`)
+
     return {
-      chat: models.filter(m => !isEmbedding(m) && lastModality(m).includes('text')).sort(byName),
-      image: models.filter(m => !isEmbedding(m) && lastModality(m).includes('image')).sort(byName),
-      embedding: models.filter(m => isEmbedding(m)).sort(byName),
+      chat: chatModels.filter(m => !isEmbeddingMeta(m) && lastModality(m).includes('text')).sort(byName),
+      image: chatModels.filter(m => !isEmbeddingMeta(m) && lastModality(m).includes('image')).sort(byName),
+      embedding: embeddingModels.sort(byName),
     }
   }
 

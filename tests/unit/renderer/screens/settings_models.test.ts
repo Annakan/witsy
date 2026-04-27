@@ -32,7 +32,7 @@ vi.mock('multi-llm-ts', async (importOriginal) => {
   // extends llm.OpenRouter).
   mod.OpenRouter.prototype.getModels = vi.fn(async () => [
     { id: 'openrouter-vision', name: 'Vision', architecture: { modality: 'text->text' } },
-    { id: 'openrouter-embed', name: 'Embed', architecture: { modality: 'text->embedding' } },
+    { id: 'openrouter-chat-2', name: 'Chat 2', architecture: { modality: 'text->text' } },
   ])
   mod.OpenRouter.prototype.getModelCapabilities = vi.fn((m: any) => ({
     tools: false,
@@ -86,10 +86,22 @@ beforeAll(() => {
 beforeEach(async () => {
   vi.clearAllMocks()
   vi.useFakeTimers()
+  // OpenRouter fetches a separate embeddings catalog via fetch(); stub it.
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (typeof url === 'string' && url.includes('output_modalities=embeddings')) {
+      return new Response(JSON.stringify({
+        data: [
+          { id: 'openrouter-embed', name: 'Embed', architecture: { modality: 'text->embeddings' } },
+        ],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response('not mocked', { status: 404 })
+  }))
 })
 
 afterEach(async () => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 test('should render', async () => {
@@ -311,8 +323,13 @@ test('openrouter settings', async () => {
   await openrouter.find('input').setValue('api-key')
   await openrouter.find('input').trigger('blur')
   expect(store.config.engines.openrouter.apiKey).toBe('api-key')
+  // onKeyChange triggers fire-and-forget getModels(); wait for the embeddings catalog
+  // fetch + saveModels chain to complete.
+  await vi.waitUntil(
+    () => (store.config.engines.openrouter.models?.embedding?.length ?? 0) > 0,
+    { timeout: 1000 },
+  )
   expect(OpenRouter.prototype.getModels).toHaveBeenCalled()
-  // embedding model discovered from raw getModels() metas
   expect(store.config.engines.openrouter.models?.embedding?.map(m => m.id)).toContain('openrouter-embed')
   const visionModelSelect = findModelSelectorPlus(openrouter, 1)
   await visionModelSelect.open()
