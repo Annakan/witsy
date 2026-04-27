@@ -2803,6 +2803,7 @@
         "pricing": "Cerebras pricing"
       },
       "chatModel": "Chat model",
+      "embeddingModel": "Embedding model",
       "custom": {
         "apiSpecification": "API Specification",
         "apiVersion": "API Version",

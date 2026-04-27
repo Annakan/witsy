@@ -71,7 +71,7 @@ const llmManager = LlmFactory.manager(store.config)
 
 const engines = computed(() => {
 
-  // standard
+  // engines natively supported by the embedder runtime
   const engines = [
     { id: 'openai', name: 'OpenAI' },
     { id: 'google', name: 'Google' },
@@ -79,12 +79,28 @@ const engines = computed(() => {
     { id: 'lmstudio', name: 'LM Studio' },
     //{ id: 'fastembed', name: 'FastEmbed-js' },
   ]
+  const seen = new Set(engines.map(e => e.id))
 
-  // add custom engines
-  for (const engine of llmManager.getCustomEngines()) {
-    const engineConfig = store.config?.engines?.[engine] as CustomEngineConfig
-    if (engineConfig?.api === 'openai'/* && engineConfig?.models?.embedding?.length*/) {
-      engines.push({ id: engine, name: engineConfig.label })
+  // add custom (user-defined) engines: OpenAI-compatible always, others only if they expose embedding models
+  for (const id of llmManager.getCustomEngines()) {
+    if (seen.has(id)) continue
+    const cfg = store.config?.engines?.[id] as CustomEngineConfig
+    if (!cfg) continue
+    const hasEmbeddings = (cfg.models?.embedding?.length ?? 0) > 0
+    if (cfg.api === 'openai' || hasEmbeddings) {
+      engines.push({ id, name: cfg.label || id })
+      seen.add(id)
+    }
+  }
+
+  // add any other configured built-in engine that has populated embedding models
+  // (selector-side only; runtime support depends on the embedder)
+  for (const id of Object.keys(store.config?.engines || {})) {
+    if (seen.has(id)) continue
+    const cfg = store.config.engines[id]
+    if ((cfg?.models?.embedding?.length ?? 0) > 0) {
+      engines.push({ id, name: llmManager.getEngineName(id) || id })
+      seen.add(id)
     }
   }
 

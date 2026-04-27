@@ -23,6 +23,19 @@
       <ModelSelectPlus v-model="vision_model" :models="vision_models" :disabled="vision_models.length == 0" @change="save" />
     </div>
     <div class="form-field">
+      <label>{{ t('settings.engines.embeddingModel') }}</label>
+      <div class="form-subgroup">
+        <Combobox
+          name="embedding_model"
+          :items="embedding_models_items"
+          :placeholder="t('common.modelPlaceholder')"
+          :show-help="false"
+          v-model="embedding_model"
+          @change="save"
+        />
+      </div>
+    </div>
+    <div class="form-field">
       <label>{{ t('settings.engines.requestCooldown') }}</label>
       <input type="number" name="requestCooldown" v-model.number="requestCooldown" min="0" step="100" :placeholder="t('settings.engines.requestCooldownHint')" @change="save"/>
     </div>
@@ -42,8 +55,9 @@ import LlmFactory from '@services/llms/llm'
 import Dialog from '@renderer/utils/dialog'
 import RefreshButton from '@components/RefreshButton.vue'
 import ModelSelectPlus from '@components/ModelSelectPlus.vue'
+import Combobox from '@components/Combobox.vue'
 import InputObfuscated from '@components/InputObfuscated.vue'
-import { ChatModel, defaultCapabilities } from 'multi-llm-ts'
+import { ChatModel, Model, defaultCapabilities } from 'multi-llm-ts'
 
 const apiKey = ref(null)
 const disableTools = ref(false)
@@ -51,6 +65,12 @@ const requestCooldown = ref<number>(null)
 const chat_model = ref<string>(null)
 const vision_model = ref<string>(null)
 const chat_models = ref<ChatModel[]>([])
+const embedding_model = ref<string>(null)
+const embedding_models = ref<Model[]>([])
+
+const embedding_models_items = computed(() =>
+  embedding_models.value.map(model => ({ id: model.id, name: model.name || model.id }))
+)
 
 const vision_models = computed(() => {
   return [
@@ -62,8 +82,10 @@ const vision_models = computed(() => {
 const load = () => {
   apiKey.value = store.config.engines.mistralai?.apiKey || ''
   chat_models.value = store.config.engines.mistralai?.models?.chat || []
+  embedding_models.value = store.config.engines.mistralai?.models?.embedding || []
   chat_model.value = store.config.engines.mistralai?.model?.chat || ''
   vision_model.value = store.config.engines.mistralai?.model?.vision || ''
+  embedding_model.value = store.config.engines.mistralai?.model?.embedding || ''
   disableTools.value = store.config.engines.mistralai?.disableTools || false
   requestCooldown.value = store.config.engines.mistralai?.requestCooldown || null
 }
@@ -98,8 +120,10 @@ const save = () => {
   store.config.engines.mistralai.apiKey = apiKey.value
   store.config.engines.mistralai.model.chat = chat_model.value
   store.config.engines.mistralai.model.vision = vision_model.value
+  store.config.engines.mistralai.model.embedding = embedding_model.value || undefined
   store.config.engines.mistralai.disableTools = disableTools.value
   store.config.engines.mistralai.requestCooldown = requestCooldown.value || undefined
+
   store.saveSettings()
 }
 

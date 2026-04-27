@@ -4,8 +4,9 @@ import { useWindowMock } from '@tests/mocks/window'
 import { store } from '@services/store'
 import LlmFactory, { ILlmManager } from '@services/llms/llm'
 import {
-  ModelsList, loadAnthropicModels, loadCerebrasModels, loadGoogleModels, loadGroqModels, loadMistralAIModels,
-  loadOllamaModels, loadOpenAIModels, loadAzureModels, loadXAIModels, loadDeepSeekModels, loadOpenRouterModels,
+  ModelsList, MistralAI as MistralAIClass, OpenRouter as OpenRouterClass,
+  loadAnthropicModels, loadCerebrasModels, loadGoogleModels, loadGroqModels,
+  loadOllamaModels, loadOpenAIModels, loadAzureModels, loadXAIModels, loadDeepSeekModels,
   defaultCapabilities
 } from 'multi-llm-ts'
 import LlmManagerBase from '@services/llms/base'
@@ -14,6 +15,16 @@ import { EngineConfig } from 'types/config'
 
 vi.mock('multi-llm-ts', async (importOriginal) => {
   const mod: any = await importOriginal()
+
+  // For OpenRouter/MistralAI our manager bypasses the loaders and uses the provider
+  // class directly. Stub getModels/getModelCapabilities on the prototype so we don't
+  // break class inheritance (our OpenRouter wrapper extends llm.OpenRouter).
+  const noopCaps = () => ({ tools: false, vision: false, reasoning: false, caching: false })
+  mod.OpenRouter.prototype.getModels = vi.fn(async () => [])
+  mod.OpenRouter.prototype.getModelCapabilities = vi.fn(noopCaps)
+  mod.MistralAI.prototype.getModels = vi.fn(async () => [])
+  mod.MistralAI.prototype.getModelCapabilities = vi.fn(noopCaps)
+
   return {
     ...mod,
     loadAnthropicModels: vi.fn((): ModelsList => ({ chat: [], image: [] })),
@@ -67,12 +78,12 @@ test('Init models', async () => {
   expect(loadCerebrasModels).toHaveBeenCalledTimes(0)
   expect(loadGoogleModels).toHaveBeenCalledTimes(0)
   expect(loadGroqModels).toHaveBeenCalledTimes(0)
-  expect(loadMistralAIModels).toHaveBeenCalledTimes(0)
+  expect(MistralAIClass.prototype.getModels).toHaveBeenCalledTimes(0)
   expect(loadOllamaModels).toHaveBeenCalledTimes(0)
   expect(loadOpenAIModels).toHaveBeenCalledTimes(0)
   expect(loadXAIModels).toHaveBeenCalledTimes(0)
   expect(loadDeepSeekModels).toHaveBeenCalledTimes(0)
-  expect(loadOpenRouterModels).toHaveBeenCalledTimes(0)
+  expect(OpenRouterClass.prototype.getModels).toHaveBeenCalledTimes(0)
 })
 
 test('Selects valid model', async () => {
@@ -122,7 +133,8 @@ test('Load models', async () => {
   expect(window.api.config?.save).toHaveBeenCalledTimes(3)
 
   await llmManager.loadModels('mistralai')
-  expect(loadMistralAIModels).toHaveBeenCalledTimes(1)
+  expect(MistralAIClass.prototype.getModels).toHaveBeenCalledTimes(1)
+  // mock returns no metas, so saveModels returns false → no settings save
   expect(window.api.config?.save).toHaveBeenCalledTimes(3)
 
   await llmManager.loadModels('ollama')
@@ -142,7 +154,7 @@ test('Load models', async () => {
   expect(window.api.config?.save).toHaveBeenCalledTimes(4)
 
   await llmManager.loadModels('openrouter')
-  expect(loadOpenRouterModels).toHaveBeenCalledTimes(1)
+  expect(OpenRouterClass.prototype.getModels).toHaveBeenCalledTimes(1)
   expect(window.api.config?.save).toHaveBeenCalledTimes(4)
 
   await llmManager.loadModels('custom1')

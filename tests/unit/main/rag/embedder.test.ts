@@ -112,3 +112,29 @@ test('Embed Google', async () => {
   expect(embedder.google.models.embedContent).toHaveBeenCalled()
   expect(embeddings).toStrictEqual([[111, 108, 108, 101, 104]])
 })
+
+test('Create OpenAI-compatible built-in (Mistral)', async () => {
+  const embedder = await Embedder.init(app, defaultSettings, 'mistralai', 'mistral-embed')
+  expect(embedder).toBeTruthy()
+  expect(embedder.openai).toBeTruthy()
+  expect(embedder.ollama).toBeFalsy()
+  expect(embedder.google).toBeFalsy()
+})
+
+test('Embed OpenAI-compatible built-in (Mistral)', async () => {
+  const embedder = await Embedder.init(app, defaultSettings, 'mistralai', 'mistral-embed')
+  const embeddings = await embedder.embed(['hello'])
+  expect(OpenAI.prototype.embeddings.create).toHaveBeenCalled()
+  expect(Ollama.prototype.embed).not.toHaveBeenCalled()
+  expect(embeddings).toStrictEqual([[111, 108, 108, 101, 104]])
+})
+
+test('Create OpenAI-compatible built-in (OpenRouter)', async () => {
+  const embedder = await Embedder.init(app, defaultSettings, 'openrouter', 'openai/text-embedding-3-small')
+  expect(embedder).toBeTruthy()
+  expect(embedder.openai).toBeTruthy()
+})
+
+test('Unsupported engine throws', async () => {
+  await expect(Embedder.init(app, defaultSettings, 'anthropic', 'whatever')).rejects.toThrow(/Unsupported embedding engine/)
+})

@@ -6,7 +6,7 @@
       <select v-model="selected" :disabled="disabled" @mousedown="onOpen" @change="onSelect">
         <option v-for="item in items" :key="item.id" :value="item.id">{{ item.name }}</option>
       </select>
-      <input class="combobox-input" type="text" :name="name" v-model="value" :placeholder="placeholder" :disabled="disabled" :required="required" @click.stop @change="onChange" @focus="onFocus" @blur="onBlur" />
+      <input class="combobox-input" type="text" :name="name" v-model="value" :placeholder="placeholder" :disabled="disabled" :required="required" @mousedown.stop @click.stop @change="onChange" @focus="onFocus" @blur="onBlur" />
     </div>
     <slot></slot>
   </div>
@@ -93,6 +93,8 @@ const onSelect = (event: Event) => {
     margin: 0 !important;
     padding-left: 8px !important;
     padding-top: 5.5px !important;
+    z-index: 1;
+    pointer-events: auto;
 
     &:focus {
       outline: none !important;

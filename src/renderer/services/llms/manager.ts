@@ -1,5 +1,5 @@
 
-import { Configuration } from 'types/config'
+import { Configuration, EngineConfig } from 'types/config'
 import Anthropic, { getComputerInfo } from './anthropic'
 import LlmManagerBase from './base'
 import * as llm from 'multi-llm-ts'
@@ -11,6 +11,99 @@ export default class LlmManager extends LlmManagerBase {
 
   constructor(config: Configuration) {
     super(config)
+  }
+
+  // OpenRouter's `loadOpenRouterModels` drops embedding models (modality `text->embedding`)
+  // and hardcodes `embedding: []`. We call getModels() ourselves and classify into all
+  // three buckets, reusing `getModelCapabilities()` so chat capability icons are identical.
+  private async loadOpenRouterModelsAll(engineConfig: EngineConfig): Promise<llm.ModelsList|null> {
+    const provider = new llm.OpenRouter(engineConfig)
+    let metas: Array<Record<string, unknown>> = []
+    try {
+      metas = (await provider.getModels() || []) as Array<Record<string, unknown>>
+    } catch (error) {
+      console.error('Error listing OpenRouter models:', error)
+      return null
+    }
+    if (!metas.length) return null
+
+    const models: llm.Model[] = metas.map(m => ({
+      id: m.id as string,
+      name: (m.name as string) || (m.id as string),
+      capabilities: provider.getModelCapabilities(m),
+      meta: m,
+    }))
+
+    const lastModality = (m: llm.Model): string => {
+      const modality = ((m.meta as Record<string, unknown>)?.architecture as { modality?: string } | undefined)?.modality || ''
+      return (modality.split('>').pop() || '').toLowerCase()
+    }
+    const isEmbedding = (m: llm.Model): boolean =>
+      lastModality(m).includes('embedding') || /embed/i.test(m.id)
+
+    const byName = (a: llm.Model, b: llm.Model) => a.name.localeCompare(b.name)
+
+    return {
+      chat: models.filter(m => !isEmbedding(m) && lastModality(m).includes('text')).sort(byName),
+      image: models.filter(m => !isEmbedding(m) && lastModality(m).includes('image')).sort(byName),
+      embedding: models.filter(m => isEmbedding(m)).sort(byName),
+    }
+  }
+
+  // MistralAI's `loadMistralAIModels` filters by `meta.capabilities.completionChat` and
+  // hardcodes `embedding: []`. Embedding models (e.g. `mistral-embed`) have
+  // `meta.capabilities.embeddings === true`. We keep the library's alias de-dup logic
+  // by calling its loader first for chat, then discover embeddings from the same API.
+  private async loadMistralAIModelsAll(engineConfig: EngineConfig): Promise<llm.ModelsList|null> {
+    const provider = new llm.MistralAI(engineConfig)
+    let metas: Array<Record<string, unknown>> = []
+    try {
+      metas = (await provider.getModels() || []) as Array<Record<string, unknown>>
+    } catch (error) {
+      console.error('Error listing MistralAI models:', error)
+      return null
+    }
+    if (!metas.length) return null
+
+    // same alias de-duplication as multi-llm-ts
+    const uniques: Array<Record<string, unknown>> = []
+    const aliases = new Set<string>()
+    for (const model of metas) {
+      const id = model.id as string
+      if (aliases.has(id)) continue
+      const modelAliases = (model.aliases as string[] | undefined) || []
+      const latest = modelAliases.filter(a => a.endsWith('-latest'))
+      if (latest.length === 1) {
+        model.id = latest[0]
+        model.name = latest[0]
+      }
+      uniques.push(model)
+      modelAliases.forEach(a => aliases.add(a))
+    }
+
+    const models: llm.Model[] = uniques.map(m => {
+      const rawName = (m.name as string) || (m.id as string)
+      return {
+        id: m.id as string,
+        name: rawName.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
+        capabilities: provider.getModelCapabilities(m),
+        meta: m,
+      }
+    })
+
+    const caps = (m: llm.Model) => ((m.meta as Record<string, unknown>)?.capabilities || {}) as Record<string, boolean>
+    const isEmbedding = (m: llm.Model): boolean =>
+      caps(m).embeddings === true || /embed/i.test(m.id)
+    const isChat = (m: llm.Model): boolean =>
+      caps(m).completionChat === true && !isEmbedding(m)
+
+    const byName = (a: llm.Model, b: llm.Model) => a.name.localeCompare(b.name)
+
+    return {
+      chat: models.filter(isChat).sort(byName),
+      image: [],
+      embedding: models.filter(isEmbedding).sort(byName),
+    }
   }
 
   getStandardEngines(): string[] {
@@ -132,13 +225,13 @@ export default class LlmManager extends LlmManagerBase {
     } else if (engine === 'meta') {
       models = await llm.loadMetaModels(this.config.engines.meta)
     } else if (engine === 'mistralai') {
-      models = await llm.loadMistralAIModels(this.config.engines.mistralai)
+      models = await this.loadMistralAIModelsAll(this.config.engines.mistralai)
     } else if (engine === 'ollama') {
       models = await llm.loadOllamaModels(this.config.engines.ollama)
     } else if (engine === 'openai') {
       models = await llm.loadOpenAIModels(this.config.engines.openai)
     } else if (engine === 'openrouter') {
-      models = await llm.loadOpenRouterModels(this.config.engines.openrouter)
+      models = await this.loadOpenRouterModelsAll(this.config.engines.openrouter)
     } else if (engine === 'xai') {
       models = await llm.loadXAIModels(this.config.engines.xai)
     }

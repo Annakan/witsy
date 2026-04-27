@@ -37,6 +37,19 @@
           </option>
         </select>
       </div>
+      <div class="form-field">
+        <label>{{ t('settings.engines.embeddingModel') }}</label>
+        <div class="form-subgroup">
+          <Combobox
+            name="embedding_model"
+            :items="embedding_models_items"
+            :placeholder="t('common.modelPlaceholder')"
+            :show-help="false"
+            v-model="embedding_model"
+            @change="save"
+          />
+        </div>
+      </div>
     </template>
     <template v-if="api === 'azure'">
       <div class="form-field">
@@ -100,7 +113,12 @@ const requestCooldown = ref<number>(null)
 const chat_model = ref<string>(null)
 const vision_model = ref<string>(null)
 const chat_models = ref<ChatModel[]>([])
+const embedding_model = ref<string>(null)
 const refresh = ref(null)
+
+const embedding_models_items = computed(() =>
+  chat_models.value.map(model => ({ id: model.id, name: model.name || model.id }))
+)
 
 const vision_models = computed(() => {
   return [
@@ -124,6 +142,7 @@ const load = () => {
   chat_models.value = engineConfig?.models?.chat || []
   chat_model.value = engineConfig?.model?.chat || ''
   vision_model.value = engineConfig?.model?.vision || ''
+  embedding_model.value = engineConfig?.model?.embedding || ''
   disableTools.value = engineConfig?.disableTools || false
   requestCooldown.value = engineConfig?.requestCooldown || null
 }
@@ -160,6 +179,11 @@ const getModels = async (): Promise<boolean> => {
 
 }
 
+const onApiChange = () => {
+  load()
+  save()
+}
+
 const onKeyChange = () => {
   if (chat_models.value.length === 0 && apiKey.value.length > 0) {
     store.config.engines[props.engine].apiKey = apiKey.value
@@ -180,6 +204,7 @@ const save = () => {
   engineConfig.apiVersion = apiVersion.value
   engineConfig.model.chat = chat_model.value
   engineConfig.model.vision = vision_model.value
+  engineConfig.model.embedding = embedding_model.value || undefined
   engineConfig.disableTools = disableTools.value
   engineConfig.requestCooldown = requestCooldown.value || undefined
 

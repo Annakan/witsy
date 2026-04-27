@@ -305,6 +305,7 @@ export type ModelConfig = {
   video?: string
   videoEdit?: string
   vision?: string
+  embedding?: string
 }
 
 export type EngineRealtimeConfig = {

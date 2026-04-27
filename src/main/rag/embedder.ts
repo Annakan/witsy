@@ -12,6 +12,14 @@ import LlmFactory, { ILlmManager } from '@renderer/services/llms/llm'
 // import path from 'path'
 // import fs from 'fs'
 
+// Built-in engines that expose an OpenAI-compatible embeddings endpoint.
+// Used as a fallback so users can select them in the RAG / Memory embedding
+// selector after manually populating engines[id].models.embedding.
+const OPENAI_COMPAT_EMBEDDING_BASE_URLS: Record<string, string> = {
+  mistralai: 'https://api.mistral.ai/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+}
+
 // const fastEmbedRoot = (app: App): string => {
 //   return path.join(app.getPath('userData'), 'fastembed')
 // }
@@ -116,7 +124,20 @@ export default class Embedder {
         })
         return
       }
-    
+
+    } else if (OPENAI_COMPAT_EMBEDDING_BASE_URLS[this.engine]) {
+
+      // Built-in providers that expose an OpenAI-compatible embeddings endpoint
+      // (e.g. Mistral, OpenRouter). The user is expected to have populated
+      // engines[id].models.embedding themselves via the Models settings.
+      const engineConfig = this.config.engines[this.engine]
+      this.openai = new OpenAI({
+        apiKey: engineConfig.apiKey,
+        baseURL: engineConfig.baseURL || OPENAI_COMPAT_EMBEDDING_BASE_URLS[this.engine],
+        dangerouslyAllowBrowser: true
+      })
+      return
+
     }
 
     // check

@@ -6,8 +6,9 @@ import { store } from '@services/store'
 import { switchToTab, tabs } from './settings_utils'
 import Settings from '@screens/Settings.vue'
 import {
-  ModelsList, loadAnthropicModels, loadCerebrasModels, loadGoogleModels, loadGroqModels, loadMistralAIModels,
-  loadOllamaModels, loadOpenAIModels, loadXAIModels, loadDeepSeekModels, loadOpenRouterModels,
+  ModelsList, MistralAI, OpenRouter,
+  loadAnthropicModels, loadCerebrasModels, loadGoogleModels, loadGroqModels,
+  loadOllamaModels, loadOpenAIModels, loadXAIModels, loadDeepSeekModels,
   loadMetaModels,
   loadLMStudioModels
 } from 'multi-llm-ts'
@@ -25,6 +26,32 @@ vi.mock('multi-llm-ts', async (importOriginal) => {
       caching: false,
     }
   })
+
+  // For OpenRouter/MistralAI our manager instantiates the provider class directly.
+  // Stub on the prototype so we don't break class inheritance (our OpenRouter wrapper
+  // extends llm.OpenRouter).
+  mod.OpenRouter.prototype.getModels = vi.fn(async () => [
+    { id: 'openrouter-vision', name: 'Vision', architecture: { modality: 'text->text' } },
+    { id: 'openrouter-embed', name: 'Embed', architecture: { modality: 'text->embedding' } },
+  ])
+  mod.OpenRouter.prototype.getModelCapabilities = vi.fn((m: any) => ({
+    tools: false,
+    vision: m.id?.includes('vision') || false,
+    reasoning: false,
+    caching: false,
+  }))
+
+  mod.MistralAI.prototype.getModels = vi.fn(async () => [
+    { id: 'mistralai-vision', name: 'Vision', capabilities: { completionChat: true, embeddings: false } },
+    { id: 'mistralai-embed', name: 'Embed', capabilities: { completionChat: false, embeddings: true } },
+  ])
+  mod.MistralAI.prototype.getModelCapabilities = vi.fn((m: any) => ({
+    tools: false,
+    vision: m.id?.includes('vision') || false,
+    reasoning: false,
+    caching: false,
+  }))
+
   return {
     ...mod,
     loadAnthropicModels: vi.fn((): ModelsList => ({ chat: [ visionModel('anthropic') ], image: [] })),
@@ -236,9 +263,9 @@ test('mistralai settings', async () => {
   await mistralai.find('input').setValue('api-key')
   await mistralai.find('input').trigger('blur')
   expect(store.config.engines.mistralai.apiKey).toBe('api-key')
-  expect(loadMistralAIModels).toHaveBeenLastCalledWith(expect.objectContaining({
-    apiKey: 'api-key'
-  }))
+  expect(MistralAI.prototype.getModels).toHaveBeenCalled()
+  // embedding model discovered from raw getModels() metas
+  expect(store.config.engines.mistralai.models?.embedding?.map(m => m.id)).toContain('mistralai-embed')
   const visionModelSelect = findModelSelectorPlus(mistralai, 1)
   await visionModelSelect.open()
   await visionModelSelect.select(1)
@@ -284,9 +311,9 @@ test('openrouter settings', async () => {
   await openrouter.find('input').setValue('api-key')
   await openrouter.find('input').trigger('blur')
   expect(store.config.engines.openrouter.apiKey).toBe('api-key')
-  expect(loadOpenRouterModels).toHaveBeenLastCalledWith(expect.objectContaining({
-    apiKey: 'api-key'
-  }))
+  expect(OpenRouter.prototype.getModels).toHaveBeenCalled()
+  // embedding model discovered from raw getModels() metas
+  expect(store.config.engines.openrouter.models?.embedding?.map(m => m.id)).toContain('openrouter-embed')
   const visionModelSelect = findModelSelectorPlus(openrouter, 1)
   await visionModelSelect.open()
   await visionModelSelect.select(1)

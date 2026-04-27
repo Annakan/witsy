@@ -30,6 +30,19 @@
       <ModelSelectPlus v-model="vision_model" :models="vision_models" :disabled="vision_models.length == 0" @change="save" />
     </div>
     <div class="form-field">
+      <label>{{ t('settings.engines.embeddingModel') }}</label>
+      <div class="form-subgroup">
+        <Combobox
+          name="embedding_model"
+          :items="embedding_models_items"
+          :placeholder="t('common.modelPlaceholder')"
+          :show-help="false"
+          v-model="embedding_model"
+          @change="save"
+        />
+      </div>
+    </div>
+    <div class="form-field">
       <label>{{ t('settings.engines.apiBaseURL') }}</label>
       <input name="baseURL" v-model="baseURL" placeholder="https://openrouter.ai/api/v1" @keydown.enter.prevent="save" @change="save"/>
     </div>
@@ -53,8 +66,9 @@ import LlmFactory from '@services/llms/llm'
 import Dialog from '@renderer/utils/dialog'
 import RefreshButton from '@components/RefreshButton.vue'
 import ModelSelectPlus from '@components/ModelSelectPlus.vue'
+import Combobox from '@components/Combobox.vue'
 import InputObfuscated from '@components/InputObfuscated.vue'
-import { ChatModel, defaultCapabilities } from 'multi-llm-ts'
+import { ChatModel, Model, defaultCapabilities } from 'multi-llm-ts'
 
 const apiKey = ref(null)
 const baseURL = ref(null)
@@ -63,7 +77,13 @@ const requestCooldown = ref<number>(null)
 const chat_model = ref<string>(null)
 const vision_model = ref<string>(null)
 const chat_models = ref<ChatModel[]>([])
+const embedding_model = ref<string>(null)
+const embedding_models = ref<Model[]>([])
 const providerOrder = ref<string>('')
+
+const embedding_models_items = computed(() =>
+  embedding_models.value.map(model => ({ id: model.id, name: model.name || model.id }))
+)
 
 const vision_models = computed(() => {
   return [
@@ -76,8 +96,10 @@ const load = () => {
   apiKey.value = store.config.engines.openrouter?.apiKey || ''
   baseURL.value = store.config.engines.openrouter?.baseURL || '' 
   chat_models.value = store.config.engines.openrouter?.models?.chat || []
+  embedding_models.value = store.config.engines.openrouter?.models?.embedding || []
   chat_model.value = store.config.engines.openrouter?.model?.chat || ''
   vision_model.value = store.config.engines.openrouter?.model?.vision || ''
+  embedding_model.value = store.config.engines.openrouter?.model?.embedding || ''
   disableTools.value = store.config.engines.openrouter?.disableTools || false
   requestCooldown.value = store.config.engines.openrouter?.requestCooldown || null
   providerOrder.value = store.config.engines.openrouter?.providerOrder || ''
@@ -114,9 +136,11 @@ const save = () => {
   store.config.engines.openrouter.baseURL = baseURL.value
   store.config.engines.openrouter.model.chat = chat_model.value
   store.config.engines.openrouter.model.vision = vision_model.value
+  store.config.engines.openrouter.model.embedding = embedding_model.value || undefined
   store.config.engines.openrouter.disableTools = disableTools.value
   store.config.engines.openrouter.requestCooldown = requestCooldown.value || undefined
   store.config.engines.openrouter.providerOrder = providerOrder.value
+
   store.saveSettings()
 }
 
